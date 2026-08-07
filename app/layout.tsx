@@ -22,8 +22,8 @@ export default function RootLayout({
 }>) {
   return (
     <ClerkProvider>
-      <html lang="en">
-        <body className={`${inter.variable} antialiased`}>
+      <html lang="en" className={inter.variable}>
+        <body className="antialiased">
           <QueryProvider>
             {children}
             <Toaster />
