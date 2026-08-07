@@ -1,0 +1,376 @@
+import {
+  pgTable,
+  pgEnum,
+  uuid,
+  text,
+  boolean,
+  timestamp,
+  integer,
+  numeric,
+  jsonb,
+  bigserial,
+  bigint,
+  date,
+  index,
+  primaryKey,
+} from "drizzle-orm/pg-core";
+
+// ─── Enums ──────────────────────────────────────────────────────────────
+
+export const facilityTypeEnum = pgEnum("facility_type", ["HUB", "SPOKE"]);
+
+export const userRoleEnum = pgEnum("user_role", [
+  "NETWORK_ADMIN",
+  "HUB_OPERATOR",
+  "HOSPITAL_STAFF",
+]);
+
+export const deviceKindEnum = pgEnum("device_kind", [
+  "SCANNER",
+  "FRIDGE",
+  "SHIPPER",
+]);
+
+export const bloodGroupEnum = pgEnum("blood_group", [
+  "A_POS",
+  "A_NEG",
+  "B_POS",
+  "B_NEG",
+  "O_POS",
+  "O_NEG",
+  "AB_POS",
+  "AB_NEG",
+]);
+
+export const componentEnum = pgEnum("component", [
+  "WHOLE",
+  "PRBC",
+  "PLATELET",
+  "PLASMA",
+]);
+
+export const unitStatusEnum = pgEnum("unit_status", [
+  "COLLECTED",
+  "TESTING",
+  "AVAILABLE",
+  "RESERVED",
+  "IN_TRANSIT",
+  "ISSUED",
+  "TRANSFUSED",
+  "QUARANTINED",
+  "EXPIRED",
+  "DISCARDED",
+]);
+
+export const custodyEventTypeEnum = pgEnum("custody_event_type", [
+  "COLLECTED",
+  "TEST_PASSED",
+  "RELEASED",
+  "SCANNED_IN",
+  "SCANNED_OUT",
+  "TRANSFER_REQUESTED",
+  "TRANSFER_ACCEPTED",
+  "DISPATCHED",
+  "RECEIVED",
+  "ISSUED_TO_PATIENT",
+  "QUARANTINED",
+  "EXPIRED",
+]);
+
+export const shipmentStatusEnum = pgEnum("shipment_status", [
+  "PREPARING",
+  "IN_TRANSIT",
+  "DELIVERED",
+  "FAILED",
+]);
+
+export const transferStatusEnum = pgEnum("transfer_status", [
+  "SUGGESTED",
+  "REQUESTED",
+  "ACCEPTED",
+  "DECLINED",
+  "COMPLETED",
+  "CANCELLED",
+]);
+
+export const serviceCodeEnum = pgEnum("service_code", [
+  "COLD_CHAIN_STORAGE",
+  "NAT_TESTING",
+  "COMPONENT_PREP",
+  "LAST_MILE_LOGISTICS",
+  "PLATFORM_SLA",
+]);
+
+// ─── Identity and places ────────────────────────────────────────────────
+
+export const facilities = pgTable("facilities", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  code: text("code").notNull().unique(),
+  name: text("name").notNull(),
+  type: facilityTypeEnum("type").notNull(),
+  city: text("city").notNull(),
+  lat: numeric("lat", { precision: 9, scale: 6 }).notNull(),
+  lng: numeric("lng", { precision: 9, scale: 6 }).notNull(),
+  beds: integer("beds"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const users = pgTable("users", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clerkUserId: text("clerk_user_id").notNull().unique(),
+  email: text("email").notNull(),
+  fullName: text("full_name"),
+  role: userRoleEnum("role").notNull().default("HOSPITAL_STAFF"),
+  facilityId: uuid("facility_id").references(() => facilities.id),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+// ─── Devices ────────────────────────────────────────────────────────────
+
+export const devices = pgTable("devices", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  label: text("label").notNull(),
+  kind: deviceKindEnum("kind").notNull(),
+  facilityId: uuid("facility_id")
+    .notNull()
+    .references(() => facilities.id),
+  deviceKey: text("device_key").notNull().unique(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+// ─── The unit ───────────────────────────────────────────────────────────
+
+export const bloodUnits = pgTable(
+  "blood_units",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    rfidUid: text("rfid_uid").notNull().unique(),
+    donorRef: text("donor_ref").notNull(),
+    bloodGroup: bloodGroupEnum("blood_group").notNull(),
+    component: componentEnum("component").notNull(),
+    status: unitStatusEnum("status").notNull().default("COLLECTED"),
+    natTested: boolean("nat_tested").notNull().default(false),
+    collectedAt: timestamp("collected_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    currentFacilityId: uuid("current_facility_id")
+      .notNull()
+      .references(() => facilities.id),
+    originFacilityId: uuid("origin_facility_id")
+      .notNull()
+      .references(() => facilities.id),
+    quarantineReason: text("quarantine_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("blood_units_facility_status_idx").on(
+      table.currentFacilityId,
+      table.status,
+    ),
+    index("blood_units_expires_at_idx").on(table.expiresAt),
+  ],
+);
+
+// ─── Chain of custody: the trust layer ──────────────────────────────────
+
+export const custodyEvents = pgTable(
+  "custody_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    unitId: uuid("unit_id")
+      .notNull()
+      .references(() => bloodUnits.id),
+    eventType: custodyEventTypeEnum("event_type").notNull(),
+    fromFacilityId: uuid("from_facility_id").references(() => facilities.id),
+    toFacilityId: uuid("to_facility_id").references(() => facilities.id),
+    actorUserId: uuid("actor_user_id").references(() => users.id),
+    deviceId: uuid("device_id").references(() => devices.id),
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    meta: jsonb("meta").notNull().default({}),
+  },
+  (table) => [
+    index("custody_events_unit_occurred_idx").on(
+      table.unitId,
+      table.occurredAt,
+    ),
+  ],
+);
+
+// ─── Cold chain ─────────────────────────────────────────────────────────
+// shipments is declared before telemetry: telemetry.shipment_id references it.
+
+export const shipments = pgTable("shipments", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  fromFacilityId: uuid("from_facility_id")
+    .notNull()
+    .references(() => facilities.id),
+  toFacilityId: uuid("to_facility_id")
+    .notNull()
+    .references(() => facilities.id),
+  status: shipmentStatusEnum("status").notNull().default("PREPARING"),
+  deviceId: uuid("device_id").references(() => devices.id),
+  departedAt: timestamp("departed_at", { withTimezone: true }),
+  arrivedAt: timestamp("arrived_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const shipmentUnits = pgTable(
+  "shipment_units",
+  {
+    shipmentId: uuid("shipment_id")
+      .notNull()
+      .references(() => shipments.id),
+    unitId: uuid("unit_id")
+      .notNull()
+      .references(() => bloodUnits.id),
+  },
+  (table) => [
+    primaryKey({ columns: [table.shipmentId, table.unitId] }),
+  ],
+);
+
+export const telemetry = pgTable(
+  "telemetry",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    deviceId: uuid("device_id")
+      .notNull()
+      .references(() => devices.id),
+    shipmentId: uuid("shipment_id").references(() => shipments.id),
+    tempC: numeric("temp_c", { precision: 5, scale: 2 }).notNull(),
+    humidity: numeric("humidity", { precision: 5, scale: 2 }),
+    recordedAt: timestamp("recorded_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    isBreach: boolean("is_breach").notNull().default(false),
+  },
+  (table) => [
+    index("telemetry_device_recorded_idx").on(
+      table.deviceId,
+      table.recordedAt.desc(),
+    ),
+  ],
+);
+
+export const breaches = pgTable("breaches", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  deviceId: uuid("device_id")
+    .notNull()
+    .references(() => devices.id),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+  peakTempC: numeric("peak_temp_c", { precision: 5, scale: 2 }).notNull(),
+  unitsAffected: integer("units_affected").notNull().default(0),
+  note: text("note"),
+});
+
+// ─── The Blood Credit market ────────────────────────────────────────────
+
+export const transfers = pgTable("transfers", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  unitId: uuid("unit_id")
+    .notNull()
+    .references(() => bloodUnits.id),
+  offeringFacilityId: uuid("offering_facility_id")
+    .notNull()
+    .references(() => facilities.id),
+  receivingFacilityId: uuid("receiving_facility_id")
+    .notNull()
+    .references(() => facilities.id),
+  status: transferStatusEnum("status").notNull().default("SUGGESTED"),
+  credits: integer("credits").notNull().default(1),
+  reason: text("reason").notNull(),
+  score: numeric("score", { precision: 6, scale: 2 }).notNull(),
+  shipmentId: uuid("shipment_id").references(() => shipments.id),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+});
+
+// Double entry. Two rows per settled transfer. SUM(delta) is always 0.
+export const creditLedger = pgTable(
+  "credit_ledger",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    facilityId: uuid("facility_id")
+      .notNull()
+      .references(() => facilities.id),
+    delta: integer("delta").notNull(),
+    balanceAfter: integer("balance_after").notNull(),
+    transferId: uuid("transfer_id").references(() => transfers.id),
+    reason: text("reason").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("credit_ledger_facility_created_idx").on(
+      table.facilityId,
+      table.createdAt.desc(),
+    ),
+  ],
+);
+
+// ─── Service revenue. Never blood. ──────────────────────────────────────
+
+export const billingLines = pgTable("billing_lines", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  facilityId: uuid("facility_id")
+    .notNull()
+    .references(() => facilities.id),
+  unitId: uuid("unit_id").references(() => bloodUnits.id),
+  code: serviceCodeEnum("code").notNull(),
+  description: text("description").notNull(),
+  amountPaise: integer("amount_paise").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const slaContracts = pgTable("sla_contracts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  facilityId: uuid("facility_id")
+    .notNull()
+    .references(() => facilities.id),
+  tier: text("tier").notNull(),
+  annualFeePaise: bigint("annual_fee_paise", { mode: "number" }).notNull(),
+  responseMinutes: integer("response_minutes").notNull(),
+  startedOn: date("started_on").notNull(),
+});
+
+export const demandSignals = pgTable(
+  "demand_signals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    facilityId: uuid("facility_id")
+      .notNull()
+      .references(() => facilities.id),
+    bloodGroup: bloodGroupEnum("blood_group").notNull(),
+    component: componentEnum("component").notNull(),
+    day: date("day").notNull(),
+    unitsUsed: integer("units_used").notNull(),
+  },
+  (table) => [
+    index("demand_signals_facility_group_component_day_idx").on(
+      table.facilityId,
+      table.bloodGroup,
+      table.component,
+      table.day.desc(),
+    ),
+  ],
+);

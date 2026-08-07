@@ -1,6 +1,7 @@
 import { Pool, neonConfig } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-serverless";
 import ws from "ws";
+import * as schema from "@/lib/schema";
 
 // Deviation from a literal reading of ARCHITECTURE.md section 4: the neon-http
 // driver has no real db.transaction() support (Drizzle/Neon confirm this — HTTP
@@ -14,4 +15,4 @@ neonConfig.webSocketConstructor = ws;
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
-export const db = drizzle(pool);
+export const db = drizzle(pool, { schema });
