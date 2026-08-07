@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import {
   Table,
@@ -222,7 +223,12 @@ export function InventoryTable() {
               return (
                 <TableRow key={u.id}>
                   <TableCell className="font-mono text-sm">
-                    {u.rfidUid}
+                    <Link
+                      href={`/units/${u.id}`}
+                      className="underline-offset-2 hover:underline"
+                    >
+                      {u.rfidUid}
+                    </Link>
                   </TableCell>
                   <TableCell className="tabular-nums">
                     {u.bloodGroup.replace("_POS", "+").replace("_NEG", "-")}
