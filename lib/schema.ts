@@ -13,6 +13,7 @@ import {
   date,
   index,
   primaryKey,
+  unique,
 } from "drizzle-orm/pg-core";
 
 // ─── Enums ──────────────────────────────────────────────────────────────
@@ -200,6 +201,12 @@ export const custodyEvents = pgTable(
       .notNull()
       .defaultNow(),
     meta: jsonb("meta").notNull().default({}),
+    // ARCHITECTURE.md section 5A: the custody hash chain. Nullable because
+    // pre-protocol-layer rows have none; verifyChain treats a missing hash
+    // as a break. Computed inside the same transaction as the insert —
+    // never backfilled from a trusted client value.
+    eventHash: text("event_hash"),
+    prevHash: text("prev_hash"),
   },
   (table) => [
     index("custody_events_unit_occurred_idx").on(
@@ -374,3 +381,44 @@ export const demandSignals = pgTable(
     ),
   ],
 );
+
+// ─── Protocol layer (ARCHITECTURE.md section 5A) ────────────────────────
+
+export const reserveFloors = pgTable(
+  "reserve_floors",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    facilityId: uuid("facility_id")
+      .notNull()
+      .references(() => facilities.id),
+    bloodGroup: bloodGroupEnum("blood_group").notNull(),
+    component: componentEnum("component").notNull(),
+    minUnits: integer("min_units").notNull(),
+  },
+  (table) => [
+    unique("reserve_floors_facility_group_component_key").on(
+      table.facilityId,
+      table.bloodGroup,
+      table.component,
+    ),
+  ],
+);
+
+// Not named in section 5A's schema list, but required to make
+// GET /api/protocol/log and the /protocol console real rather than stubbed,
+// and for scripts/check-invariants.ts to assert no logged allocation ever
+// drew a reserved unit. One row per POST /api/allocate call.
+export const allocationLog = pgTable("allocation_log", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  priority: text("priority").notNull(), // 'ROUTINE' | 'URGENT' | 'EMERGENCY'
+  requestedGroup: bloodGroupEnum("requested_group").notNull(),
+  requestedComponent: componentEnum("requested_component").notNull(),
+  unitsRequested: integer("units_requested").notNull(),
+  lat: numeric("lat", { precision: 9, scale: 6 }).notNull(),
+  lng: numeric("lng", { precision: 9, scale: 6 }).notNull(),
+  results: jsonb("results").notNull().default([]),
+  replenishment: jsonb("replenishment"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});

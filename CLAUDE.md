@@ -14,9 +14,25 @@ This is a **hackathon build with a hard 18-hour ceiling**. Every decision in thi
 
 ### The single idea the demo must prove
 
-> India does not primarily lose blood because donors are unwilling. It loses blood because banks are silos: one facility discards a unit tomorrow while another 20 km away turns a patient away. Bishop makes inter-facility transfer possible by making custody and cold chain provable, and makes it legal by settling in credits, never money.
+> Blood is a perishable, partially-substitutable asset that moves between institutions which do not trust each other. No inventory system can model that, which is why every existing platform can only answer "does facility X have O+?" BishopOS gives every unit of blood a routable address and a time-to-live, and exposes one call that returns the single unit, anywhere in the network, whose allocation costs the network least. Blood has never had an address. We gave it one.
 
 If a feature does not help a judge understand or believe that sentence, it does not get built.
+
+---
+
+## 2A. The protocol
+
+BishopOS is framed as a network protocol, not an inventory app. The mapping:
+
+| Networking concept | Bishop equivalent |
+|---|---|
+| MAC address | RFID UID — permanent, physical, burned into the tag |
+| IP address | BUA — routable, and it changes when the unit changes hands |
+| TTL | Shelf life remaining |
+| Checksum | The custody hash chain. A broken chain drops the packet |
+| QoS | Priority class |
+| Reserved address space | The emergency reserve floor |
+| Routing table | The allocation solver |
 
 ---
 
@@ -38,6 +54,9 @@ These are correctness requirements, not preferences. Violating any of them break
 7. **Every state change is accompanied by a custody event.** Custody without an event is the exact failure the product claims to solve. There are no exceptions.
 8. **A cold-chain breach quarantines affected units automatically and irreversibly.** Quarantine is not user-clearable in this build.
 9. **Expiry is computed from `collected_at` plus the component's shelf life**, never stored as a hand-edited value that can drift.
+10. **Units inside a facility's emergency reserve floor are INVISIBLE to network allocation.** They are excluded from the solver's candidate set before scoring, not penalised during it. There is no override, no priority level, and no admin flag that can route reserved stock.
+11. **Every custody event carries a hash chained to its predecessor.** A unit whose chain does not verify is unroutable and is reported as `integrityValid: false`. Integrity is computed, never stored as a trusted boolean.
+12. **The BUA is derived, never stored.** It is computed from the unit's current facility, group, component and RFID UID on every read, so it cannot go stale.
 
 ---
 
@@ -57,6 +76,9 @@ These are correctness requirements, not preferences. Violating any of them break
 | 8 | Cold-chain telemetry ingest + breach → auto-quarantine | Makes transfers trustworthy |
 | 9 | Service billing meter (never for blood) | Proof of the revenue model |
 | 10 | Simple demand forecast (moving average) | Feeds the matching engine |
+| 11 | Bishop Unit Address and the resolver | Makes units addressable |
+| 12 | POST /allocate, the protocol's single call | The product surface |
+| 13 | Emergency reserve floors | Makes the optimiser safe |
 
 ### Out of scope — do not build, do not stub elaborately
 
@@ -179,6 +201,11 @@ The build is complete when all of the following are true, verified by running th
 - [ ] `/simulator` can drive the entire demo with no hardware connected.
 - [ ] The app is deployed to a public Vercel URL and works from a phone.
 - [ ] `pnpm build` passes with no type errors.
+- [ ] `POST /allocate` returns a BUA, a facility, an ETA, a TTL and a custody verdict for a routine request.
+- [ ] The same call with priority `EMERGENCY` returns a local reserve unit with `etaMinutes` 0 and raises an automatic replenishment request.
+- [ ] At least one seeded scenario makes the solver return a compatible substitute from a farther facility over an exact match nearby, with a reason string that explains why.
+- [ ] Tampering with any `custody_events` row causes that unit to report `integrityValid: false` and to disappear from allocation candidates.
+- [ ] `/docs` renders the endpoint with a copyable curl command.
 
 ---
 

@@ -10,9 +10,9 @@ export default clerkMiddleware(async (auth, req) => {
 
 export const config = {
   matcher: [
-    // Run on every route except static assets, Next internals and /api/ingest/*.
-    "/((?!_next|api/ingest|.*\\..*).*)",
-    // Always run on /api/*, except /api/ingest/*, which devices call unauthenticated.
-    "/api((?!/ingest).*)",
+    // Run on every route except static assets, Next internals, /api/ingest/*
+    // and /api/allocate — both are device-key authenticated, not Clerk.
+    "/((?!_next|api/ingest|api/allocate|.*\\..*).*)",
+    "/api((?!/ingest|/allocate).*)",
   ],
 };

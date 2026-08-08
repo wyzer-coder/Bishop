@@ -342,6 +342,110 @@ The engine only creates `transfers` rows with status `SUGGESTED`. A human accept
 
 ---
 
+## 5A. The protocol layer
+
+### Bishop Unit Address
+
+Format:  `bua:<facility_code>/<group>/<component>/<rfid_uid>`
+Example: `bua:SPK-CHN-APOLLO/O_POS/PRBC/04A3B2C1`
+
+Derived on read from the unit's CURRENT facility. It changes when the unit moves, exactly as an IP does. The RFID UID is the stable physical identity and never changes. Implement `buaFor(unit, facility)` and `parseBua(string)` in `lib/domain/protocol.ts`.
+
+`GET /api/resolve/[...bua]` returns:
+
+```
+{ bua, rfidUid, group, component, status, heldAt: {code,name,lat,lng},
+  ttlHours, ttlRatio, integrityValid, custodyHash, coldChainIntact,
+  reserved: boolean, routable: boolean }
+```
+
+### Custody hash chain
+
+Add a nullable text column `event_hash` and a nullable text column `prev_hash` to `custody_events`.
+
+```
+event_hash = sha256(prev_hash ?? "GENESIS"
+                    + unit_id + event_type + from_facility_id
+                    + to_facility_id + occurred_at.toISOString())
+```
+
+Computed inside the same transaction that writes the event. `verifyChain(unitId)` recomputes the whole chain and returns `{ valid, brokenAtEventId }`. A unit with `valid = false` is excluded from allocation and shows a red integrity badge on its detail page. Never store the verdict; always recompute.
+
+### Emergency reserve floors
+
+New table:
+
+```sql
+CREATE TABLE reserve_floors (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  facility_id  uuid NOT NULL REFERENCES facilities(id),
+  blood_group  blood_group NOT NULL,
+  component    component NOT NULL,
+  min_units    integer NOT NULL,
+  UNIQUE (facility_id, blood_group, component)
+);
+```
+
+Seed every spoke with an `O_NEG` `PRBC` floor of 4 and an `O_POS` `PRBC` floor of 6. Seed the hub with 10 and 12.
+
+```
+availableForNetwork(facility, group, component)
+  = countAvailable - minUnits, floored at zero.
+```
+
+Reserved units are removed from the candidate set BEFORE scoring. This is a filter, never a penalty term.
+
+### The allocation objective
+
+Replace the section 5 scoring formula. The solver no longer ranks transfers for dying units. It answers allocation requests by minimising network cost:
+
+```
+cost(unit U, request R) =
+      0.5  * distanceKm(U.facility, R.location)
+    + 25   * (U.group !== R.group ? rarityWeight(U.group) : 0)
+    + 30   * (U is the last compatible unit at its facility ? 1 : 0)
+    - 100  * (1 - ttlRatio(U))
+
+ttlRatio(U)   = hoursRemaining / shelfLifeHours, clamped to [0,1]
+rarityWeight  = O_NEG 2.0, AB_NEG 1.8, B_NEG 1.6, A_NEG 1.4, others 1.0
+```
+
+Choose argmin cost among routable candidates. The negative TTL term is what produces the counterintuitive allocation: a unit close to expiry earns a large salvage credit that can outweigh distance and substitution penalties.
+
+Every response carries a reason string naming the dominant term, for example:
+
+> "Exact O+ match available 2 km away with 22 days remaining. Allocating O- from Vanagaram instead: 38 hours remaining, would otherwise expire. Net network wastage avoided: 1 unit."
+
+### Priority classes
+
+| Priority | Behaviour |
+|---|---|
+| `EMERGENCY` | Local reserve only. Bypass routing entirely. `etaMinutes` 0. Draw from reserve, then auto-create a `REQUESTED` transfer to the nearest hub to replenish the floor. Return that ETA separately as `replenishmentEtaMinutes`. |
+| `URGENT` | Local non-reserved stock first. If none, network within 60 minutes by ETA. Never touches reserve. |
+| `ROUTINE` | Full network optimisation over the cost function above. |
+
+### POST /api/allocate
+
+Request:
+
+```
+{ group, component, units, lat, lng, neededBy?, priority? }
+```
+
+`priority` defaults to `ROUTINE`.
+
+Response, one object per allocated unit:
+
+```
+{ bua, unitId, rfidUid, heldAt, distanceKm, etaMinutes, ttlHours,
+  custodyVerified, coldChainIntact, creditCost, reason,
+  replenishmentEtaMinutes? }
+```
+
+ETA is estimated as `distanceKm / 30 kmph * 60`, plus a 15 minute handling constant. State that assumption in the response as `etaBasis`.
+
+---
+
 ## 6. Blood Credit ledger
 
 `lib/domain/credits.ts`.
@@ -429,6 +533,9 @@ Both routes must be **idempotent-tolerant**: a duplicate scan within 5 seconds i
 | `GET` | `/api/coldchain` | Devices, latest readings, open breaches |
 | `GET` | `/api/billing` | Service lines with totals |
 | `GET` | `/api/stats` | Dashboard aggregates |
+| `POST` | `/api/allocate` | The protocol's single call |
+| `GET` | `/api/resolve/[bua]` | Resolve an address to live unit state |
+| `GET` | `/api/protocol/log` | Recent allocation decisions with their reasons |
 
 All GETs are polled at 4000 ms by TanStack Query. Keep them cheap: index as specified and avoid N+1.
 
@@ -477,12 +584,13 @@ Seed must be re-runnable: truncate then insert.
 
 ### The ninety-second demo
 
-1. **Dashboard.** Network of five facilities. 120 units. Eight flagged at risk. One spoke short on O+. *"Today every one of these banks is blind to the others."*
-2. **Transfers.** Open the platelet unit expiring in 31 hours. Read the generated reason aloud. Accept.
-3. **Credits.** Both balances move. Point at the ledger: two rows, equal and opposite. *"No money changed hands. That is what makes this legal."*
-4. **Scan the tag** on the physical bag with the ESP32. The unit detail page updates within one poll. Custody timeline gains a row with the device name.
-5. **Trigger the breach.** Warm the sensor, or click "Simulate breach" on `/simulator`. Units on that shipment turn red and quarantine. *"A broken cold chain voids the unit automatically. That is why the receiving hospital can trust a bag that sat in someone else's fridge."*
-6. **Billing.** Scroll the service lines. *"Cold chain, testing, logistics, platform. There is no line here for blood, and there never will be."*
+1. **Terminal on screen.** `curl POST /api/allocate` for 2 units of O+ PRBC. JSON returns with a BUA, a facility, a TTL and a custody verdict. *"That is the entire product surface. Any hospital in India integrates this in an afternoon."*
+2. **Run it again** against the seeded substitution scenario. The system returns O- from 30 km away instead of the O+ 2 km away. Read the reason string aloud. *"The system deliberately gave you a worse match, to save a life it has not been asked about yet. No inventory system in India can produce that sentence."*
+2b. **Run it a third time** with priority `EMERGENCY`. `etaMinutes` comes back 0, sourced from local reserve, with an automatic replenishment request already raised. *"We know the difference between an emergency and an optimisation problem."*
+4. **Credits.** Both balances move. Point at the ledger: two rows, equal and opposite. *"No money changed hands. That is what makes this legal."*
+5. **Scan the tag** on the physical bag with the ESP32. The unit detail page updates within one poll. Custody timeline gains a row with the device name.
+6. **Trigger the breach.** Warm the sensor, or click "Simulate breach" on `/simulator`. Units on that shipment turn red and quarantine. *"A broken cold chain voids the unit automatically. That is why the receiving hospital can trust a bag that sat in someone else's fridge."*
+7. **Billing.** Scroll the service lines. *"Cold chain, testing, logistics, platform. There is no line here for blood, and there never will be."*
 
 Close on the credit ledger, not the dashboard.
 

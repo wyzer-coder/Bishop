@@ -10,16 +10,20 @@ import {
   Thermometer,
   Receipt,
   Radio,
+  Network,
+  FileCode,
 } from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/protocol", label: "Protocol", icon: Network },
   { href: "/inventory", label: "Inventory", icon: Package },
   { href: "/transfers", label: "Transfers", icon: ArrowLeftRight },
   { href: "/credits", label: "Credits", icon: Coins },
   { href: "/coldchain", label: "Cold Chain", icon: Thermometer },
   { href: "/billing", label: "Billing", icon: Receipt },
   { href: "/simulator", label: "Simulator", icon: Radio },
+  { href: "/docs", label: "Docs", icon: FileCode },
 ];
 
 export function NavLinks() {

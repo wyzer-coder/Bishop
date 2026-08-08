@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq, gte } from "drizzle-orm";
+import { and, desc, eq, gte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { getDeviceByKey } from "@/lib/devices";
 import { bloodUnits, custodyEvents, devices, facilities, billingLines } from "@/lib/schema";
 import { transitionUnit } from "@/lib/domain/units";
+import { hashEvent } from "@/lib/domain/hash";
 
 // ARCHITECTURE.md section 9: device scan ingest. Unauthenticated by Clerk
 // (excluded in middleware.ts); devices authenticate with X-Device-Key.
@@ -104,13 +105,32 @@ export async function POST(req: NextRequest) {
     // No status transition applies (e.g. a routine internal scan) — still
     // record the custody event (CLAUDE.md section 2, rule 7: no exceptions),
     // and for IN, track the unit's physical relocation without touching
-    // status, which stays outside transitionUnit's remit.
+    // status, which stays outside transitionUnit's remit. This bypasses
+    // transitionUnit, so the hash chain is computed here instead.
+    const toFacilityId = action === "IN" ? device.facilityId : unit.currentFacilityId;
+    const [latest] = await tx
+      .select({ eventHash: custodyEvents.eventHash })
+      .from(custodyEvents)
+      .where(eq(custodyEvents.unitId, unit.id))
+      .orderBy(desc(custodyEvents.occurredAt))
+      .limit(1);
+    const prevHash = latest?.eventHash ?? null;
+    const occurredAt = new Date();
     await tx.insert(custodyEvents).values({
       unitId: unit.id,
       eventType,
       fromFacilityId: unit.currentFacilityId,
-      toFacilityId: action === "IN" ? device.facilityId : unit.currentFacilityId,
+      toFacilityId,
       deviceId: device.id,
+      occurredAt,
+      prevHash,
+      eventHash: hashEvent(prevHash, {
+        unitId: unit.id,
+        eventType,
+        fromFacilityId: unit.currentFacilityId,
+        toFacilityId,
+        occurredAt,
+      }),
     });
     if (action === "IN" && device.facilityId !== unit.currentFacilityId) {
       const [updated] = await tx

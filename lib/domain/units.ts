@@ -1,8 +1,9 @@
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import type { ExtractTablesWithRelations } from "drizzle-orm";
 import type { NeonTransaction } from "drizzle-orm/neon-serverless";
 import * as schema from "@/lib/schema";
 import { bloodUnits, custodyEvents } from "@/lib/schema";
+import { hashEvent } from "@/lib/domain/hash";
 
 export type Tx = NeonTransaction<
   typeof schema,
@@ -235,6 +236,25 @@ export async function transitionUnit(
     .where(eq(bloodUnits.id, unitId))
     .returning();
 
+  // Custody hash chain (ARCHITECTURE.md section 5A): computed here, inside
+  // the same transaction as the event write, from the previous event's
+  // stored hash — never trusted from a client-supplied value.
+  const [latest] = await tx
+    .select({ eventHash: custodyEvents.eventHash })
+    .from(custodyEvents)
+    .where(eq(custodyEvents.unitId, unitId))
+    .orderBy(desc(custodyEvents.occurredAt))
+    .limit(1);
+  const prevHash = latest?.eventHash ?? null;
+  const occurredAt = new Date();
+  const eventHash = hashEvent(prevHash, {
+    unitId,
+    eventType: context.eventType,
+    fromFacilityId,
+    toFacilityId,
+    occurredAt,
+  });
+
   await tx.insert(custodyEvents).values({
     unitId,
     eventType: context.eventType,
@@ -243,6 +263,9 @@ export async function transitionUnit(
     actorUserId: context.actorUserId,
     deviceId: context.deviceId,
     meta: context.meta ?? {},
+    occurredAt,
+    prevHash,
+    eventHash,
   });
 
   return updated;
