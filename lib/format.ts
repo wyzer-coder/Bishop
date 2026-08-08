@@ -12,6 +12,16 @@ export function formatIST(date: string | Date) {
   }).format(d);
 }
 
+// CLAUDE.md section 5: money is stored as integer paise, never floats.
+// Converted to rupees only at this render boundary.
+export function formatRupees(amountPaise: number) {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(amountPaise / 100);
+}
+
 export function formatISTTime(date: string | Date) {
   const d = typeof date === "string" ? new Date(date) : date;
   return new Intl.DateTimeFormat("en-IN", {

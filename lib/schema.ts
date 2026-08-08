@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   pgEnum,
@@ -14,11 +15,13 @@ import {
   index,
   primaryKey,
   unique,
+  check,
 } from "drizzle-orm/pg-core";
 
 // ─── Enums ──────────────────────────────────────────────────────────────
 
 export const facilityTypeEnum = pgEnum("facility_type", ["HUB", "SPOKE"]);
+export const familyLinkStatusEnum = pgEnum("family_link_status", ["PENDING", "VERIFIED"]);
 
 export const userRoleEnum = pgEnum("user_role", [
   "NETWORK_ADMIN",
@@ -113,6 +116,11 @@ export const facilities = pgTable("facilities", {
   lat: numeric("lat", { precision: 9, scale: 6 }).notNull(),
   lng: numeric("lng", { precision: 9, scale: 6 }).notNull(),
   beds: integer("beds"),
+  // ARCHITECTURE.md section 5B item 7 (optional): current ambient
+  // temperature at the facility's coordinates, from Open-Meteo (no API
+  // key) at seed time only — never fetched in a request path. Nullable:
+  // absent if the fetch failed or hasn't run.
+  ambientC: numeric("ambient_c", { precision: 5, scale: 2 }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -418,6 +426,104 @@ export const allocationLog = pgTable("allocation_log", {
   lng: numeric("lng", { precision: 9, scale: 6 }).notNull(),
   results: jsonb("results").notNull().default([]),
   replenishment: jsonb("replenishment"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+// ─── Scan-driven registration and the movable scanner ──────────────────
+// Additive. Every physical tap — known tag or not — writes exactly one row
+// here, which is what the ScanWatcher polls to drive the "new unit" dialog
+// or a toast. All actual unit movement still goes through transitionUnit()
+// (lib/domain/units.ts) and its custody-event hash chain; this table is a
+// log of scans, not a second source of truth for unit state.
+export const scanEvents = pgTable(
+  "scan_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    rfidUid: text("rfid_uid").notNull(),
+    deviceId: uuid("device_id").references(() => devices.id),
+    facilityId: uuid("facility_id").references(() => facilities.id),
+    // Deliberately a plain text column, not a pgEnum: UNKNOWN_TAG | MOVED_OUT
+    // | MOVED_IN | NO_CHANGE | DUPLICATE_IGNORED.
+    outcome: text("outcome").notNull(),
+    unitId: uuid("unit_id").references(() => bloodUnits.id),
+    detail: text("detail"),
+    handled: boolean("handled").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index("scan_events_created_at_idx").on(table.createdAt.desc())],
+);
+
+// Singleton row (id is always 1) tracking where the one physical scanner
+// currently is. Moving it changes which facility the very next scan acts
+// on — lets a single demo scanner stand in for every facility's device.
+export const scannerState = pgTable(
+  "scanner_state",
+  {
+    id: integer("id").primaryKey().default(1),
+    currentFacilityId: uuid("current_facility_id")
+      .notNull()
+      .references(() => facilities.id),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [check("scanner_state_singleton", sql`${table.id} = 1`)],
+);
+
+// ─── Personal / family blood credits ───────────────────────────────────
+// A separate, deliberately additive layer, NOT part of the institutional
+// credit_ledger above. Donating gives a person +1 credit; a verified family
+// member can redeem it for a same-value unit instead of searching for a
+// donor. No rupee value anywhere, non-transferable outside a verified link,
+// no cash-out. Distinct from the facility-to-facility ledger, which stays
+// exactly as CLAUDE.md defines it.
+
+export const donors = pgTable("donors", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  phone: text("phone").notNull().unique(),
+  // Set when a donor is registered from a physical card tap (the scan
+  // ingest route's donor lookup below) — nullable because a donor can also
+  // be registered from the Family Credits page with no card involved.
+  rfidUid: text("rfid_uid").unique(),
+  facilityId: uuid("facility_id").references(() => facilities.id),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const donorFamilyMembers = pgTable("donor_family_members", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  donorId: uuid("donor_id")
+    .notNull()
+    .references(() => donors.id),
+  memberName: text("member_name").notNull(),
+  memberPhone: text("member_phone").notNull(),
+  status: familyLinkStatusEnum("status").notNull().default("PENDING"),
+  verificationCode: text("verification_code").notNull(),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+// Double-entry-adjacent but not double-entry: a personal balance, not a
+// network ledger. +1 per donation, -1 per redemption, balanceAfter denormalized
+// the same way credit_ledger does for cheap history reads.
+export const donorCreditLedger = pgTable("donor_credit_ledger", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  donorId: uuid("donor_id")
+    .notNull()
+    .references(() => donors.id),
+  delta: integer("delta").notNull(),
+  balanceAfter: integer("balance_after").notNull(),
+  reason: text("reason").notNull(),
+  unitId: uuid("unit_id").references(() => bloodUnits.id),
+  familyMemberId: uuid("family_member_id").references(() => donorFamilyMembers.id),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

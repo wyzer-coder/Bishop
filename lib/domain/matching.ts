@@ -86,7 +86,7 @@ type StockUnit = {
  * surplus per facility+group (ARCHITECTURE.md section 5A: reserved units
  * are a pre-filter, removed before scoring, never a penalty term).
  */
-async function networkStock(tx: Tx, requestGroup: BloodGroup, component: Component) {
+async function availableForNetwork(tx: Tx, requestGroup: BloodGroup, component: Component) {
   const donorGroups = compatibleDonorGroups(requestGroup);
 
   const units = await tx
@@ -276,7 +276,7 @@ async function nearestFacility(tx: Tx, point: { lat: number; lng: number }) {
 
 export async function allocate(tx: Tx, request: AllocateRequest): Promise<AllocationResponse> {
   const priority = request.priority ?? "ROUTINE";
-  const { available, countByFacility } = await networkStock(tx, request.group, request.component);
+  const { available, countByFacility } = await availableForNetwork(tx, request.group, request.component);
   const ranked = rankCandidates(available, countByFacility, request);
   const bestExactMatch = ranked.find((c) => c.bloodGroup === request.group) ?? null;
 
@@ -398,7 +398,7 @@ async function allocateEmergency(
   if (results.length > 0) {
     const [hub] = await tx.select().from(facilities).where(eq(facilities.type, "HUB")).limit(1);
     if (hub) {
-      const { available: hubAvailable } = await networkStock(tx, request.group, request.component);
+      const { available: hubAvailable } = await availableForNetwork(tx, request.group, request.component);
       const atHub = hubAvailable.filter((u) => u.facilityId === hub.id).sort((a, b) => b.remainingHours - a.remainingHours)[0];
       if (atHub) {
         const distanceKm = haversineKm({ lat: Number(hub.lat), lng: Number(hub.lng) }, { lat: Number(local.lat), lng: Number(local.lng) });

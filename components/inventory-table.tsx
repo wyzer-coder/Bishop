@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import {
   Table,
@@ -12,6 +13,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectTrigger,
@@ -45,18 +47,18 @@ const ALL = "ALL";
 
 const BADGE_VARIANT: Record<
   UnitStatus,
-  "default" | "secondary" | "destructive" | "outline"
+  "default" | "secondary" | "destructive" | "outline" | "healthy" | "risk"
 > = {
   COLLECTED: "outline",
   TESTING: "outline",
-  AVAILABLE: "default",
+  AVAILABLE: "healthy",
   RESERVED: "secondary",
-  IN_TRANSIT: "secondary",
+  IN_TRANSIT: "risk",
   ISSUED: "secondary",
-  TRANSFUSED: "secondary",
+  TRANSFUSED: "healthy",
   QUARANTINED: "destructive",
   EXPIRED: "destructive",
-  DISCARDED: "outline",
+  DISCARDED: "destructive",
 };
 
 function formatCountdown(hours: number) {
@@ -100,6 +102,8 @@ function FilterSelect({
 }
 
 export function InventoryTable() {
+  const searchParams = useSearchParams();
+
   const { data, isLoading } = useQuery<{ units: InventoryUnit[] }>({
     queryKey: ["inventory"],
     queryFn: async () => {
@@ -117,10 +121,14 @@ export function InventoryTable() {
     return () => clearInterval(id);
   }, []);
 
-  const [facility, setFacility] = useState(ALL);
+  // Pre-selects the facility filter when arriving from a link elsewhere in
+  // the app (e.g. "View inventory" from a marker on /map).
+  const [facility, setFacility] = useState(() => searchParams.get("facility") ?? ALL);
   const [bloodGroup, setBloodGroup] = useState(ALL);
   const [component, setComponent] = useState(ALL);
   const [status, setStatus] = useState(ALL);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 15;
 
   const units = useMemo(() => data?.units ?? [], [data]);
 
@@ -137,6 +145,14 @@ export function InventoryTable() {
     if (status !== ALL && u.status !== status) return false;
     return true;
   });
+
+  useEffect(() => {
+    setPage(1);
+  }, [facility, bloodGroup, component, status]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const paged = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   return (
     <div className="flex flex-col gap-4">
@@ -178,7 +194,7 @@ export function InventoryTable() {
 
       <div className="overflow-x-auto rounded-lg border border-border bg-card">
         <Table>
-          <TableHeader>
+          <TableHeader className="sticky top-0 z-10 bg-card">
             <TableRow>
               <TableHead>RFID UID</TableHead>
               <TableHead>Group</TableHead>
@@ -188,7 +204,7 @@ export function InventoryTable() {
               <TableHead className="text-right">Expires in</TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody>
+          <TableBody className="[&>tr:nth-child(even)]:bg-muted/40">
             {isLoading && (
               <TableRow>
                 <TableCell
@@ -209,7 +225,7 @@ export function InventoryTable() {
                 </TableCell>
               </TableRow>
             )}
-            {filtered.map((u) => {
+            {paged.map((u) => {
               const collectedAt = new Date(u.collectedAt);
               const hours = remainingHours(
                 { component: u.component, collectedAt },
@@ -257,6 +273,36 @@ export function InventoryTable() {
           </TableBody>
         </Table>
       </div>
+
+      {filtered.length > 0 && (
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">
+            Showing {(currentPage - 1) * PAGE_SIZE + 1}–
+            {Math.min(currentPage * PAGE_SIZE, filtered.length)} of {filtered.length}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage <= 1}
+            >
+              Previous
+            </Button>
+            <span className="tabular-nums text-muted-foreground">
+              {currentPage} / {pageCount}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+              disabled={currentPage >= pageCount}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

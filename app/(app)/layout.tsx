@@ -1,5 +1,7 @@
 import { UserButton } from "@clerk/nextjs";
 import { NavLinks } from "@/components/nav-links";
+import { ScannerLocationBar } from "@/components/scanner-location-bar";
+import { ScanWatcher } from "@/components/scan-watcher";
 
 export default function AppLayout({
   children,
@@ -18,12 +20,12 @@ export default function AppLayout({
       </aside>
       <div className="flex flex-1 flex-col">
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card px-6">
-          {/* TODO(Phase 2/3): resolve via lib/auth.ts once users/facilities exist */}
-          <span className="text-sm text-muted-foreground">Facility —</span>
+          <ScannerLocationBar />
           <UserButton />
         </header>
         <main className="flex-1 px-6 py-6">{children}</main>
       </div>
+      <ScanWatcher />
     </div>
   );
 }

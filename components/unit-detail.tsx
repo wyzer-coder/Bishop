@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { ProvenanceQr } from "@/components/provenance-qr";
 import { STORAGE_RANGE, type Component, type UnitStatus } from "@/lib/domain/units";
 import { formatIST, formatISTTime } from "@/lib/format";
 
@@ -46,18 +47,18 @@ type UnitDetailResponse = {
 
 const BADGE_VARIANT: Record<
   UnitStatus,
-  "default" | "secondary" | "destructive" | "outline"
+  "default" | "secondary" | "destructive" | "outline" | "healthy" | "risk"
 > = {
   COLLECTED: "outline",
   TESTING: "outline",
-  AVAILABLE: "default",
+  AVAILABLE: "healthy",
   RESERVED: "secondary",
-  IN_TRANSIT: "secondary",
+  IN_TRANSIT: "risk",
   ISSUED: "secondary",
-  TRANSFUSED: "secondary",
+  TRANSFUSED: "healthy",
   QUARANTINED: "destructive",
   EXPIRED: "destructive",
-  DISCARDED: "outline",
+  DISCARDED: "destructive",
 };
 
 export function UnitDetail({ unitId }: { unitId: string }) {
@@ -100,17 +101,23 @@ export function UnitDetail({ unitId }: { unitId: string }) {
   return (
     <div className="flex flex-col gap-6">
       <div className="rounded-lg border border-border bg-card p-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="font-mono text-lg tracking-tight">{unit.rfidUid}</p>
-            <p className="text-sm text-muted-foreground">
+        <div className="flex flex-wrap items-start justify-between gap-6">
+          <div className="flex-1">
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="font-mono text-lg tracking-tight">{unit.rfidUid}</p>
+              <Badge variant={BADGE_VARIANT[unit.status]} className="text-sm">
+                {unit.status}
+              </Badge>
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
               {unit.bloodGroup.replace("_POS", "+").replace("_NEG", "-")} ·{" "}
               {unit.component} · donor {unit.donorRef}
             </p>
           </div>
-          <Badge variant={BADGE_VARIANT[unit.status]} className="text-sm">
-            {unit.status}
-          </Badge>
+          <div className="flex flex-col items-center gap-1">
+            <ProvenanceQr unitId={unit.id} size={96} />
+            <p className="text-center text-[11px] text-muted-foreground">Label QR</p>
+          </div>
         </div>
         <Separator className="my-4" />
         <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">

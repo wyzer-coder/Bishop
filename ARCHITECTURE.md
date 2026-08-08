@@ -88,7 +88,7 @@ Neon Postgres. Drizzle definitions in `lib/schema.ts`. Reference DDL:
 CREATE TYPE facility_type AS ENUM ('HUB','SPOKE');
 CREATE TABLE facilities (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  code          text UNIQUE NOT NULL,          -- 'HUB-CHN-01', 'SPK-CHN-APOLLO'
+  code          text UNIQUE NOT NULL,          -- 'HUB-DHN-01', 'SPK-DHN-SNCM'
   name          text NOT NULL,
   type          facility_type NOT NULL,
   city          text NOT NULL,
@@ -332,7 +332,7 @@ score =  (shortage        × 40)     // will they actually use it
 
 Discard any pair where `shortage = 0` or `distanceKm > 150`. Return the top three per unit, each with a `reason` string generated from the dominant term, for example:
 
-> "Apollo Vanagaram projects a 4-unit O+ PRBC shortfall in 6 days. This unit expires in 4 days, 11 km away."
+> "S.N. Chokrabarty Memorial Nursing Home projects a 4-unit O+ PRBC shortfall in 6 days. This unit expires in 4 days, 11 km away."
 
 Distance uses the haversine formula against the stored lat/lng. **No map API.**
 
@@ -347,7 +347,7 @@ The engine only creates `transfers` rows with status `SUGGESTED`. A human accept
 ### Bishop Unit Address
 
 Format:  `bua:<facility_code>/<group>/<component>/<rfid_uid>`
-Example: `bua:SPK-CHN-APOLLO/O_POS/PRBC/04A3B2C1`
+Example: `bua:SPK-DHN-SNCM/O_POS/PRBC/04A3B2C1`
 
 Derived on read from the unit's CURRENT facility. It changes when the unit moves, exactly as an IP does. The RFID UID is the stable physical identity and never changes. Implement `buaFor(unit, facility)` and `parseBua(string)` in `lib/domain/protocol.ts`.
 
@@ -414,7 +414,7 @@ Choose argmin cost among routable candidates. The negative TTL term is what prod
 
 Every response carries a reason string naming the dominant term, for example:
 
-> "Exact O+ match available 2 km away with 22 days remaining. Allocating O- from Vanagaram instead: 38 hours remaining, would otherwise expire. Net network wastage avoided: 1 unit."
+> "Exact O+ match available 2 km away with 22 days remaining. Allocating O- from SAI Hospital Blood Bank, Bokaro Steel City instead: 38 hours remaining, would otherwise expire. Net network wastage avoided: 1 unit."
 
 ### Priority classes
 
@@ -569,15 +569,44 @@ All GETs are polled at 4000 ms by TanStack Query. Keep them cheap: index as spec
 
 ### Seed (`scripts/seed.ts`, deterministic, fixed random seed)
 
-- 1 hub: `HUB-CHN-01`, Chennai.
-- 4 spokes across Chennai with realistic coordinates and bed counts.
+**Facility data is real**, not invented. `lib/data/govdata.ts` loads it from
+the data.gov.in Blood Bank Directory (Ministry of Health & Family Welfare,
+NDSAP): live via `DATA_GOV_IN_KEY` if set and the API responds, otherwise
+the committed offline snapshot at `lib/data/facilities.snapshot.json` — the
+2015 dataset's own coordinates are blank for almost every Jharkhand row, so
+the snapshot's lat/lngs are best-effort placements of each facility's real
+named locality, documented in the snapshot file itself. This fetch happens
+**only** inside `scripts/seed.ts`; no request path calls a third-party API.
+
+- 1 hub: `HUB-DHN-01`, Patliputra Medical College and Hospital (PMCH) Blood
+  Bank, Saraidhela, Dhanbad.
+- 4 spokes, all real named facilities from the source data: S.N. Chokrabarty
+  Memorial Nursing Home (Dhanbad), Tata Central Hospital (Jamadoba,
+  Dhanbad), Dhanbad Sadar Hospital (Jora Pathak, Dhanbad), and SAI Hospital
+  Blood Bank (Sector-IV, Bokaro Steel City) — the last one real but outside
+  Dhanbad city proper, needed because the four Dhanbad-city facilities only
+  span a few km and can't host a 30 km substitution leg on their own.
 - 6 devices: 1 scanner and 1 fridge at the hub, 1 fridge each at three spokes, 1 shipper logger.
-- 120 blood units spread across groups and components, with `collected_at` values chosen so that:
+- ~120 blood units spread across groups and components, with `collected_at` values chosen so that:
   - about 8 units sit inside their risk window at demo time,
   - at least 2 are platelets expiring within 36 hours (the most dramatic countdown),
-  - one spoke is visibly short of `O_POS` `PRBC`.
+  - the two spokes not playing a role below are visibly short of `O_POS`/`O_NEG` `PRBC`,
+  - a deliberate substitution scenario is seeded 2 km / 30 km from a demo
+    request point computed at seed time (not hardcoded — see
+    `solveDemoPoint` in `scripts/seed.ts`, which finds the point exactly
+    2 km from S.N. Chokrabarty Memorial Nursing Home that lands closest to
+    30 km from SAI Hospital Blood Bank, so the scenario holds regardless of
+    whether facility coordinates came from the live API or the snapshot):
+    an exact `O_POS` `PRBC` match at S.N. Chokrabarty with 22 days
+    remaining, seeded as that facility's sole network-visible compatible
+    unit, and an `O_NEG` `PRBC` unit at SAI Hospital (Bokaro) with 38 hours
+    remaining, seeded alongside other stock so it is not its facility's
+    last visible unit. Both sit above their reserve floor. The cost
+    function (section 5A) values the near-expiry O- substitute at roughly
+    -31 versus the near exact match's roughly -17, so the solver allocates
+    across the network instead of the 2 km match.
 - 90 days of `demand_signals` per spoke with a weekday pattern, so the moving average is non-trivial.
-- Opening credit balances: hub `+6`, two spokes `0`, one spoke `−3` (so the "reciprocity" story has a live example).
+- Opening credit balances: hub `+6`, two spokes `0`, two spokes `−3` (so the "reciprocity" story has a live example, and `SUM(delta) = 0` closes across all 4 spokes).
 - Six weeks of billing lines so the billing page is not empty.
 
 Seed must be re-runnable: truncate then insert.
@@ -606,6 +635,8 @@ NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
 NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
 NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL=/dashboard
 DEMO_DEVICE_KEY=                       # convenience key used by /simulator
+DATA_GOV_IN_KEY=                       # optional; data.gov.in API key, seed-time only, falls back to snapshot if unset
+DATA_GOV_IN_BLOOD_BANK_RESOURCE_ID=    # optional; overrides the default Blood Bank Directory resource id
 ```
 
 Clerk middleware protects everything under `/(app)`. `/api/ingest/*` must be **excluded** from Clerk middleware; devices authenticate with `X-Device-Key` only.

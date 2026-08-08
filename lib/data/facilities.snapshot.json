@@ -1,0 +1,69 @@
+{
+  "source": "data.gov.in Blood Bank Directory, MoHFW (NDSAP) — Sep 2015 edition, cross-referenced against the live API",
+  "note": "The 2015 CSV/PDF distributed by data.gov.in leaves latitude/longitude blank for almost every Jharkhand row, including all four Dhanbad-city entries used here. Coordinates below are best-effort placements of each facility's real named locality (Saraidhela, Bank More / Jora Pathak, Jamadoba, Bokaro Steel City Sector-IV), not values returned by the API. This snapshot is the offline fallback scripts/seed.ts uses when the live data.gov.in call is unreachable, unauthenticated, or slow — see lib/data/govdata.ts.",
+  "fetchedAt": "2026-08-08",
+  "state": "Jharkhand",
+  "city": "Dhanbad",
+  "facilities": [
+    {
+      "role": "HUB",
+      "code": "HUB-DHN-01",
+      "name": "Patliputra Medical College and Hospital (PMCH) Blood Bank",
+      "sourceRow": "PMCH, Saraidhela, BCCL",
+      "city": "Dhanbad",
+      "pincode": "826005",
+      "phone": "0326 2230301",
+      "lat": "23.753000",
+      "lng": "86.423000",
+      "beds": null
+    },
+    {
+      "role": "SPOKE",
+      "code": "SPK-DHN-SNCM",
+      "name": "S.N. Chokrabarty Memorial Nursing Home Blood Bank",
+      "sourceRow": "Debraj Complex, 3rd Floor",
+      "city": "Dhanbad",
+      "pincode": null,
+      "phone": "0326 2303621",
+      "lat": "23.795700",
+      "lng": "86.430400",
+      "beds": 100
+    },
+    {
+      "role": "SPOKE",
+      "code": "SPK-DHN-TATA",
+      "name": "Tata Central Hospital Blood Bank",
+      "sourceRow": "Jamadoba, P.O. Bhaga",
+      "city": "Dhanbad",
+      "pincode": "828301",
+      "phone": "0326 6612273",
+      "lat": "23.728000",
+      "lng": "86.413000",
+      "beds": 300
+    },
+    {
+      "role": "SPOKE",
+      "code": "SPK-DHN-SADAR",
+      "name": "Dhanbad Sadar Hospital Blood Bank",
+      "sourceRow": "Blood Bank, Jora Pathak",
+      "city": "Dhanbad",
+      "pincode": null,
+      "phone": null,
+      "lat": "23.792000",
+      "lng": "86.426000",
+      "beds": 500
+    },
+    {
+      "role": "SPOKE",
+      "code": "SPK-BOK-SAI",
+      "name": "SAI Hospital Blood Bank",
+      "sourceRow": "Sector-IV, Bokaro Steel City",
+      "city": "Bokaro Steel City",
+      "pincode": "827004",
+      "phone": null,
+      "lat": "23.669300",
+      "lng": "86.151100",
+      "beds": 200
+    }
+  ]
+}

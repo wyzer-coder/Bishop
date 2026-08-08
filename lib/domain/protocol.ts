@@ -79,6 +79,43 @@ export async function verifyChain(
 }
 
 /**
+ * Same check as verifyChain, for every unit at once, in one query instead of
+ * one round trip per unit. Used by GET /api/stats (dashboard's "unroutable"
+ * count) — /api/units/[id] still uses verifyChain, which is the honest
+ * per-unit primitive; this is a bulk optimization on top of the same logic,
+ * not a replacement for it.
+ */
+export async function verifyAllChains(tx: Tx): Promise<Map<string, boolean>> {
+  const events = await tx.select().from(custodyEvents).orderBy(asc(custodyEvents.occurredAt));
+  const byUnit = new Map<string, typeof events>();
+  for (const e of events) {
+    if (!byUnit.has(e.unitId)) byUnit.set(e.unitId, []);
+    byUnit.get(e.unitId)!.push(e);
+  }
+  const result = new Map<string, boolean>();
+  for (const [unitId, unitEvents] of byUnit) {
+    let prevHash: string | null = null;
+    let valid = true;
+    for (const e of unitEvents) {
+      const expected = hashEvent(prevHash, {
+        unitId: e.unitId,
+        eventType: e.eventType,
+        fromFacilityId: e.fromFacilityId,
+        toFacilityId: e.toFacilityId,
+        occurredAt: e.occurredAt,
+      });
+      if (e.eventHash !== expected) {
+        valid = false;
+        break;
+      }
+      prevHash = e.eventHash;
+    }
+    result.set(unitId, valid);
+  }
+  return result;
+}
+
+/**
  * Emergency-reserve partition, shared by protocol.ts (per-unit `reserved`
  * flag on resolve) and matching.ts (candidate pre-filter for allocation).
  * Freshest `floor` units stay reserved; anything past that is network

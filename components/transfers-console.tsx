@@ -187,7 +187,7 @@ export function TransfersConsole() {
                 <div className="flex flex-wrap items-center gap-3">
                   <span className="font-mono">{t.unitRfidUid}</span>
                   <span>{groupLabel(t.unitBloodGroup)} {t.unitComponent}</span>
-                  <Badge variant="secondary">{t.status}</Badge>
+                  <Badge variant="risk">{t.status}</Badge>
                   <span className="text-muted-foreground">
                     {t.offeringFacility?.name} → {t.receivingFacility?.name}
                   </span>
@@ -218,7 +218,7 @@ export function TransfersConsole() {
             {resolved.map((t) => (
               <div key={t.id} className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
                 <span className="font-mono">{t.unitRfidUid}</span>
-                <Badge variant="outline">{t.status}</Badge>
+                <Badge variant={t.status === "ACCEPTED" ? "healthy" : "outline"}>{t.status}</Badge>
                 <span>{t.offeringFacility?.name} → {t.receivingFacility?.name}</span>
                 <span className="tabular-nums">{formatIST(t.createdAt)}</span>
               </div>

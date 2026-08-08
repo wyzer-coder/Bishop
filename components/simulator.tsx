@@ -80,6 +80,20 @@ export function Simulator() {
     queryClient.invalidateQueries({ queryKey: ["unit"] });
   }
 
+  async function handleTap() {
+    if (!device) return toast.error("Select a device first");
+    if (!rfidUid) return toast.error("Enter or pick an RFID UID");
+    // No `action` — the scanner infers direction from the unit's current
+    // state and where "Scanner at" (top bar) says it is right now. The
+    // resulting dialog or toast comes from ScanWatcher (mounted once in the
+    // app shell), not from here, so this doesn't await/handle the response
+    // beyond a hard network failure.
+    const { ok, status, json } = await postIngest("scan", device.deviceKey, { rfidUid });
+    if (!ok && status !== 404) {
+      toast.error(json.error ?? "Tap failed");
+    }
+  }
+
   async function handleScan(action: "IN" | "OUT") {
     if (!device) return toast.error("Select a device first");
     if (!rfidUid) return toast.error("Enter or pick an RFID UID");
@@ -196,12 +210,21 @@ export function Simulator() {
             </SelectContent>
           </Select>
           <div className="flex gap-2">
-            <Button onClick={() => handleScan("IN")}>Scan IN</Button>
+            <Button onClick={handleTap}>Tap</Button>
+            <Button variant="outline" onClick={() => handleScan("IN")}>
+              Scan IN
+            </Button>
             <Button variant="outline" onClick={() => handleScan("OUT")}>
               Scan OUT
             </Button>
           </div>
         </div>
+        <p className="mt-3 text-xs text-muted-foreground">
+          <strong>Tap</strong> is a real card tap — direction is inferred automatically from
+          the unit&apos;s state and wherever &ldquo;Scanner at&rdquo; (top bar) currently is. An
+          unregistered UID opens the new-unit dialog; a known one moves and shows a toast.
+          Scan IN / Scan OUT below force an explicit direction instead, ignoring the inference.
+        </p>
       </div>
 
       <div className="rounded-lg border border-border bg-card p-6">

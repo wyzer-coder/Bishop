@@ -14,8 +14,8 @@ export default async function DocsPage() {
     "group": "O_POS",
     "component": "PRBC",
     "units": 1,
-    "lat": 13.0569,
-    "lng": 80.1017,
+    "lat": 23.780744,
+    "lng": 86.419480,
     "priority": "ROUTINE"
   }'`;
 
@@ -95,8 +95,12 @@ export default async function DocsPage() {
           <CopyButton text={curl} />
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          The coordinates above are 2 km from SPK-CHN-APOLLO — a seeded
-          facility, not a placeholder.
+          The coordinates above are 2 km from SPK-DHN-SNCM (S.N. Chokrabarty
+          Memorial Nursing Home Blood Bank, Dhanbad) — a real, seeded
+          facility, not a placeholder. An exact O+ match sits there with 22
+          days remaining; the network allocates an O- unit from SAI Hospital
+          Blood Bank in Bokaro Steel City, 30 km away, with 38 hours
+          remaining instead. Run it to see why.
         </p>
       </section>
 

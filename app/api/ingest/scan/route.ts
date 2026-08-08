@@ -2,12 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, desc, eq, gte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { getDeviceByKey } from "@/lib/devices";
-import { bloodUnits, custodyEvents, devices, facilities, billingLines } from "@/lib/schema";
-import { transitionUnit } from "@/lib/domain/units";
-import { hashEvent } from "@/lib/domain/hash";
+import { bloodUnits, devices, scanEvents } from "@/lib/schema";
+import {
+  getScannerFacilityId,
+  planAutoScan,
+  moveOut,
+  moveIn,
+  InvalidTransitionError,
+} from "@/lib/domain/scanner";
+import { findDonorByRfid, recordReturningDonation } from "@/lib/domain/donor-credits";
 
-// ARCHITECTURE.md section 9: device scan ingest. Unauthenticated by Clerk
-// (excluded in middleware.ts); devices authenticate with X-Device-Key.
+// ARCHITECTURE.md section 9 + the movable-scanner extension: device scan
+// ingest. Unauthenticated by Clerk (excluded in middleware.ts); devices
+// authenticate with X-Device-Key. Every tap writes a scan_events row,
+// including unknown tags and no-op scans — that row is what the
+// ScanWatcher polls in the browser.
 export async function POST(req: NextRequest) {
   const deviceKey = req.headers.get("X-Device-Key");
   if (!deviceKey) {
@@ -19,136 +28,153 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => null);
-  if (
-    !body ||
-    typeof body.rfidUid !== "string" ||
-    (body.action !== "IN" && body.action !== "OUT")
-  ) {
+  if (!body || typeof body.rfidUid !== "string") {
     return NextResponse.json({ error: "INVALID_PAYLOAD" }, { status: 400 });
   }
-  const { rfidUid, action } = body as { rfidUid: string; action: "IN" | "OUT" };
+  const rfidUid: string = body.rfidUid;
+  const action: "IN" | "OUT" | "AUTO" =
+    body.action === "IN" || body.action === "OUT" ? body.action : "AUTO";
 
-  await db
-    .update(devices)
-    .set({ lastSeenAt: new Date() })
-    .where(eq(devices.id, device.id));
+  await db.update(devices).set({ lastSeenAt: new Date() }).where(eq(devices.id, device.id));
 
-  const [unit] = await db
-    .select()
-    .from(bloodUnits)
-    .where(eq(bloodUnits.rfidUid, rfidUid))
-    .limit(1);
-  if (!unit) {
-    return NextResponse.json({ error: "UNKNOWN_TAG" }, { status: 404 });
-  }
+  const outcome = await db.transaction(async (tx) => {
+    const scannerFacilityId = await getScannerFacilityId(tx);
 
-  const eventType = action === "IN" ? ("SCANNED_IN" as const) : ("SCANNED_OUT" as const);
-
-  // Idempotent-tolerant: a duplicate scan of the same unit+device+action
-  // within 5 seconds (loose breadboard wiring) is ignored, not an error.
-  const fiveSecondsAgo = new Date(Date.now() - 5000);
-  const [dup] = await db
-    .select({ id: custodyEvents.id })
-    .from(custodyEvents)
-    .where(
-      and(
-        eq(custodyEvents.unitId, unit.id),
-        eq(custodyEvents.deviceId, device.id),
-        eq(custodyEvents.eventType, eventType),
-        gte(custodyEvents.occurredAt, fiveSecondsAgo),
-      ),
-    )
-    .limit(1);
-  if (dup) {
-    return NextResponse.json({
-      unit: { id: unit.id, rfidUid: unit.rfidUid, status: unit.status },
-      duplicate: true,
-    });
-  }
-
-  const result = await db.transaction(async (tx) => {
-    // A unit dispatched (scanned OUT) while RESERVED begins its transit.
-    if (action === "OUT" && unit.status === "RESERVED") {
-      return transitionUnit(tx, unit.id, "IN_TRANSIT", {
-        eventType: "SCANNED_OUT",
-        toFacilityId: unit.currentFacilityId,
-        deviceId: device.id,
-      });
-    }
-
-    // A unit arriving (scanned IN) while IN_TRANSIT is issued to the
-    // receiving facility's stock.
-    if (action === "IN" && unit.status === "IN_TRANSIT") {
-      const updated = await transitionUnit(tx, unit.id, "ISSUED", {
-        eventType: "SCANNED_IN",
-        toFacilityId: device.facilityId,
-        deviceId: device.id,
-      });
-
-      const [facility] = await tx
-        .select()
-        .from(facilities)
-        .where(eq(facilities.id, device.facilityId))
-        .limit(1);
-      if (facility?.type === "SPOKE") {
-        await tx.insert(billingLines).values({
-          facilityId: device.facilityId,
-          unitId: unit.id,
-          code: "COLD_CHAIN_STORAGE",
-          description: `Cold-chain storage — ${unit.rfidUid}`,
-          amountPaise: 25_000,
-        });
-      }
-      return updated;
-    }
-
-    // No status transition applies (e.g. a routine internal scan) — still
-    // record the custody event (CLAUDE.md section 2, rule 7: no exceptions),
-    // and for IN, track the unit's physical relocation without touching
-    // status, which stays outside transitionUnit's remit. This bypasses
-    // transitionUnit, so the hash chain is computed here instead.
-    const toFacilityId = action === "IN" ? device.facilityId : unit.currentFacilityId;
-    const [latest] = await tx
-      .select({ eventHash: custodyEvents.eventHash })
-      .from(custodyEvents)
-      .where(eq(custodyEvents.unitId, unit.id))
-      .orderBy(desc(custodyEvents.occurredAt))
+    // Idempotent-tolerant: a duplicate tap of the same tag on the same
+    // device within 5 seconds (loose breadboard wiring, or a card held on
+    // the reader) is ignored, not reprocessed — checked before we even
+    // know yet whether this tag is a unit, a donor, or unknown.
+    const fiveSecondsAgo = new Date(Date.now() - 5000);
+    const [recentDup] = await tx
+      .select({ id: scanEvents.id, unitId: scanEvents.unitId })
+      .from(scanEvents)
+      .where(
+        and(
+          eq(scanEvents.rfidUid, rfidUid),
+          eq(scanEvents.deviceId, device.id),
+          gte(scanEvents.createdAt, fiveSecondsAgo),
+        ),
+      )
+      .orderBy(desc(scanEvents.createdAt))
       .limit(1);
-    const prevHash = latest?.eventHash ?? null;
-    const occurredAt = new Date();
-    await tx.insert(custodyEvents).values({
-      unitId: unit.id,
-      eventType,
-      fromFacilityId: unit.currentFacilityId,
-      toFacilityId,
-      deviceId: device.id,
-      occurredAt,
-      prevHash,
-      eventHash: hashEvent(prevHash, {
-        unitId: unit.id,
-        eventType,
-        fromFacilityId: unit.currentFacilityId,
-        toFacilityId,
-        occurredAt,
-      }),
-    });
-    if (action === "IN" && device.facilityId !== unit.currentFacilityId) {
-      const [updated] = await tx
-        .update(bloodUnits)
-        .set({ currentFacilityId: device.facilityId, updatedAt: new Date() })
-        .where(eq(bloodUnits.id, unit.id))
-        .returning();
-      return updated;
+    if (recentDup) {
+      await tx.insert(scanEvents).values({
+        rfidUid,
+        deviceId: device.id,
+        facilityId: scannerFacilityId,
+        outcome: "DUPLICATE_IGNORED",
+        unitId: recentDup.unitId,
+        handled: true,
+      });
+      return { status: 200 as const, body: { outcome: "DUPLICATE_IGNORED" } };
     }
-    return unit;
+
+    const [unit] = await tx
+      .select()
+      .from(bloodUnits)
+      .where(eq(bloodUnits.rfidUid, rfidUid))
+      .limit(1);
+
+    if (!unit) {
+      // Not a blood unit tag — a recognized donor card tapped again is
+      // another donation, credited immediately, no dialog needed.
+      const donor = await findDonorByRfid(tx, rfidUid);
+      if (donor) {
+        const { balance } = await recordReturningDonation(tx, donor);
+        const detail = `Thank you ${donor.name} for donating blood! You now have ${balance} credit${balance === 1 ? "" : "s"}.`;
+        const [scanRow] = await tx
+          .insert(scanEvents)
+          .values({
+            rfidUid,
+            deviceId: device.id,
+            facilityId: scannerFacilityId,
+            outcome: "DONOR_THANKS",
+            unitId: null,
+            detail,
+            handled: false,
+          })
+          .returning();
+        return {
+          status: 200 as const,
+          body: { outcome: "DONOR_THANKS", detail, scanId: scanRow.id, donor: { id: donor.id, name: donor.name, balance } },
+        };
+      }
+
+      await tx.insert(scanEvents).values({
+        rfidUid,
+        deviceId: device.id,
+        facilityId: scannerFacilityId,
+        outcome: "UNKNOWN_TAG",
+        unitId: null,
+        handled: false,
+      });
+      return { status: 404 as const, body: { error: "UNKNOWN_TAG", rfidUid } };
+    }
+
+    let resultOutcome: "MOVED_OUT" | "MOVED_IN" | "NO_CHANGE";
+    let detail: string | null = null;
+    let finalUnit = unit;
+
+    if (action === "AUTO") {
+      const plan = planAutoScan(unit, scannerFacilityId);
+      if (plan.action === "MOVE_OUT") {
+        finalUnit = await moveOut(tx, unit, device.id);
+        resultOutcome = "MOVED_OUT";
+      } else if (plan.action === "MOVE_IN") {
+        finalUnit = await moveIn(tx, unit, device.id, scannerFacilityId);
+        resultOutcome = "MOVED_IN";
+      } else {
+        resultOutcome = "NO_CHANGE";
+        detail = plan.detail;
+      }
+    } else if (action === "OUT") {
+      try {
+        finalUnit = await moveOut(tx, unit, device.id);
+        resultOutcome = "MOVED_OUT";
+      } catch (err) {
+        if (!(err instanceof InvalidTransitionError)) throw err;
+        resultOutcome = "NO_CHANGE";
+        detail = err.message;
+      }
+    } else {
+      try {
+        finalUnit = await moveIn(tx, unit, device.id, scannerFacilityId);
+        resultOutcome = "MOVED_IN";
+      } catch (err) {
+        if (!(err instanceof InvalidTransitionError)) throw err;
+        resultOutcome = "NO_CHANGE";
+        detail = err.message;
+      }
+    }
+
+    const [scanRow] = await tx
+      .insert(scanEvents)
+      .values({
+        rfidUid,
+        deviceId: device.id,
+        facilityId: scannerFacilityId,
+        outcome: resultOutcome,
+        unitId: unit.id,
+        detail,
+        handled: false,
+      })
+      .returning();
+
+    return {
+      status: 200 as const,
+      body: {
+        outcome: resultOutcome,
+        detail,
+        scanId: scanRow.id,
+        unit: {
+          id: finalUnit.id,
+          rfidUid: finalUnit.rfidUid,
+          status: finalUnit.status,
+          currentFacilityId: finalUnit.currentFacilityId,
+        },
+      },
+    };
   });
 
-  return NextResponse.json({
-    unit: {
-      id: result.id,
-      rfidUid: result.rfidUid,
-      status: result.status,
-      currentFacilityId: result.currentFacilityId,
-    },
-  });
+  return NextResponse.json(outcome.body, { status: outcome.status });
 }

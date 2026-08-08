@@ -7,13 +7,52 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-heading: var(--font-sans);
+  --font-sans: var(--font-inter-tight), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-archivo), var(--font-sans);
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, "SFMono-Regular", monospace;
+
+  /* The one motion rhythm (§2.5): 833ms = 72bpm, used for anything "alive"
+     — skeleton shimmer, status-dot pulse, live-feed entrance, TTL-ring
+     pulse under 12h. Everything else is a fast 160ms/320ms transition. */
+  --animate-shimmer: shimmer 833ms ease-in-out infinite;
+  --animate-pulse-833: pulse-833 833ms cubic-bezier(0.4, 0, 0.6, 1) infinite;
+
+  /* Blood-supply-network design system tokens (UI/UX redesign brief). */
+  --color-blood-50: var(--blood-50);
+  --color-blood-100: var(--blood-100);
+  --color-blood-200: var(--blood-200);
+  --color-blood-400: var(--blood-400);
+  --color-blood-600: var(--blood-600);
+  --color-blood-700: var(--blood-700);
+  --color-blood-900: var(--blood-900);
+  --color-plasma-100: var(--plasma-100);
+  --color-plasma-500: var(--plasma-500);
+  --color-plasma-700: var(--plasma-700);
+  --color-cryo-100: var(--cryo-100);
+  --color-cryo-500: var(--cryo-500);
+  --color-cryo-700: var(--cryo-700);
+  --color-verified-500: var(--verified-500);
+  --color-alert-500: var(--alert-500);
+  --color-alert-500-a12: var(--alert-500-a12);
+  --color-warn-500: var(--warn-500);
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+
+  /* CLAUDE.md-era aliases — kept so existing pages (bg-navy, text-credit,
+     Badge's healthy/risk variants, etc.) re-skin via the tokens below
+     instead of needing per-component edits. See DESIGN NOTE in app/design. */
   --color-navy: var(--navy);
   --color-credit: var(--credit);
   --color-status-healthy: var(--status-healthy);
   --color-status-risk: var(--status-risk);
   --color-status-breach: var(--status-breach);
+
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -43,56 +82,137 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
+
+  /* Radius scale, §2.4: 4px default, 8px cards, 999px chips/badges only. */
+  --radius-sm: 2px;
+  --radius-md: 3px;
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --radius-xl: 8px;
+  --radius-2xl: 10px;
+  --radius-3xl: 12px;
+  --radius-4xl: 999px;
 }
 
 :root {
-  /* CLAUDE.md section 6: design language. No dark mode (out of scope). */
-  --background: #f7f7f5;
-  --foreground: #1f2430;
-  --card: #ffffff;
-  --card-foreground: #1f2430;
-  --popover: #ffffff;
-  --popover-foreground: #1f2430;
-  --primary: #1b2a4a;
-  --primary-foreground: #ffffff;
-  --secondary: #f0f0ed;
-  --secondary-foreground: #1f2430;
-  --muted: #f0f0ed;
-  --muted-foreground: #6b6f76;
-  --accent: #f0f0ed;
-  --accent-foreground: #1b2a4a;
-  --destructive: #b03a3a;
-  --border: #e5e5e0;
-  --input: #e5e5e0;
-  --ring: #1b2a4a;
-  --chart-1: #1b2a4a;
-  --chart-2: #5b4b8a;
-  --chart-3: #2f7a4f;
-  --chart-4: #b8860b;
-  --chart-5: #b03a3a;
-  --radius: 0.5rem;
-  --sidebar: #ffffff;
-  --sidebar-foreground: #1f2430;
-  --sidebar-primary: #1b2a4a;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f0f0ed;
-  --sidebar-accent-foreground: #1b2a4a;
-  --sidebar-border: #e5e5e0;
-  --sidebar-ring: #1b2a4a;
+  /* ─── Blood-supply-network palette (UI/UX redesign brief §2.1) ──────── */
+  --blood-50: #fff5f5;
+  --blood-100: #fde3e4;
+  --blood-200: #f7bec1;
+  --blood-400: #d6323c;
+  --blood-600: #a4161a; /* PRIMARY — arterial, not fire-engine */
+  --blood-700: #83101a;
+  --blood-900: #430a10;
 
-  /* Domain colors, used only where CLAUDE.md section 6 specifies. */
-  --navy: #1b2a4a;
-  --credit: #5b4b8a;
-  --status-healthy: #2f7a4f;
-  --status-risk: #b8860b;
-  --status-breach: #b03a3a;
+  --plasma-100: #fbf0d9;
+  --plasma-500: #d69a2d;
+  --plasma-700: #8a5e12;
+
+  --cryo-100: #e4f0fa;
+  --cryo-500: #2b7fd4;
+  --cryo-700: #14527f;
+
+  --verified-500: #1e7a4b;
+  --alert-500: #ff4526;
+  --alert-500-a12: rgb(255 69 38 / 12%); /* the one sanctioned translucent-red fill, §4.5 */
+  --warn-500: #d97706;
+
+  --paper: #ffffff;
+  --surface: #fbf7f7;
+  --surface-2: #f4eded;
+  --line: #e8dcdc;
+  --line-strong: #d3c1c1;
+  --ink: #17100f;
+  --ink-muted: #6b5a58;
+  --ink-faint: #9c8a88;
+
+  /* ─── Semantic tokens, sourced from the palette above ────────────────
+     Existing primitives (Button, Card, Input, Table, Badge, Dialog,
+     Select, Tabs, Separator) are built entirely on these — re-skinning
+     the tokens re-skins every one of them with zero component edits. */
+  --background: var(--surface);
+  --foreground: var(--ink);
+  --card: var(--paper);
+  --card-foreground: var(--ink);
+  --popover: var(--paper);
+  --popover-foreground: var(--ink);
+  --primary: var(--blood-600);
+  --primary-foreground: #ffffff;
+  --secondary: var(--surface-2);
+  --secondary-foreground: var(--ink);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--ink-muted);
+  --accent: var(--blood-50);
+  --accent-foreground: var(--blood-700);
+  --destructive: var(--alert-500);
+  --border: var(--line);
+  --input: var(--line);
+  --ring: var(--blood-600);
+  --chart-1: var(--blood-600);
+  --chart-2: var(--plasma-500);
+  --chart-3: var(--cryo-500);
+  --chart-4: var(--verified-500);
+  --chart-5: var(--warn-500);
+  --radius: 4px;
+  --sidebar: var(--surface);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--blood-600);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--blood-50);
+  --sidebar-accent-foreground: var(--blood-700);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--blood-600);
+
+  /* CLAUDE.md-era aliases, kept live so pages built before this pass
+     re-skin automatically. DESIGN NOTE: revisit --credit once the ledger
+     screen (§4.6) is actually redesigned in Pass 4 — plasma-700 is a
+     placeholder distinguishing hue, not a considered choice yet. */
+  --navy: var(--blood-900);
+  --credit: var(--plasma-700);
+  --status-healthy: var(--verified-500);
+  --status-risk: var(--warn-500);
+  --status-breach: var(--alert-500);
+}
+
+/* Manual override (a future Settings toggle can flip this by adding/
+   removing .dark on <html>, via next-themes) always wins over system
+   preference, per next-themes' attribute="class" convention. */
+.dark,
+:root[data-theme="dark"] {
+  --paper: #1c1214;
+  --surface: #430a10;
+  --surface-2: #2a1a1d;
+  --line: #3a2427;
+  --line-strong: #4d2e32;
+  --ink: #f7efef;
+  --ink-muted: #c9a9a8;
+  --ink-faint: #8f7373;
+
+  /* --blood-600 is too dark to read as an accent on a dark field — the
+     brief's own instruction: keep --blood-400 as the accent instead. */
+  --primary: var(--blood-400);
+  --ring: var(--blood-400);
+  --accent: color-mix(in oklch, var(--blood-400) 16%, var(--surface));
+  --accent-foreground: var(--blood-200);
+  --card: var(--paper);
+  --card-foreground: var(--ink);
+  --popover: var(--paper);
+  --popover-foreground: var(--ink);
+  --background: var(--surface);
+  --foreground: var(--ink);
+  --secondary: var(--surface-2);
+  --secondary-foreground: var(--ink);
+  --muted: var(--surface-2);
+  --muted-foreground: var(--ink-muted);
+  --border: var(--line);
+  --input: var(--line);
+  --chart-1: var(--blood-400);
+  --sidebar: var(--surface);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--blood-400);
+  --sidebar-accent: color-mix(in oklch, var(--blood-400) 16%, var(--surface));
+  --sidebar-accent-foreground: var(--blood-200);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--blood-400);
 }
 
 @layer base {
@@ -106,3 +226,39 @@
     @apply font-sans;
   }
 }
+
+@keyframes shimmer {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@keyframes pulse-833 {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(0.92);
+  }
+}
+
+/* §2.5, non-negotiable: every "alive" animation collapses to opacity-only
+   or nothing under reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
