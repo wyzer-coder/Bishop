@@ -46,7 +46,7 @@
 
   /* CLAUDE.md-era aliases — kept so existing pages (bg-navy, text-credit,
      Badge's healthy/risk variants, etc.) re-skin via the tokens below
-     instead of needing per-component edits. See DESIGN NOTE in app/design. */
+     instead of needing per-component edits. */
   --color-navy: var(--navy);
   --color-credit: var(--credit);
   --color-status-healthy: var(--status-healthy);
@@ -94,36 +94,41 @@
 }
 
 :root {
-  /* ─── Blood-supply-network palette (UI/UX redesign brief §2.1) ──────── */
-  --blood-50: #fff5f5;
-  --blood-100: #fde3e4;
-  --blood-200: #f7bec1;
-  --blood-400: #d6323c;
-  --blood-600: #a4161a; /* PRIMARY — arterial, not fire-engine */
+  /* ─── Accent scale — used sparingly: buttons, links, active nav, focus
+     rings. Not a background wash. Neutrals below are true neutral, no red
+     undertone — this is a light, white theme with a red accent, not a
+     red theme. ──────────────────────────────────────────────────────── */
+  --blood-50: #fef2f2;
+  --blood-100: #fee2e2;
+  --blood-200: #fecaca;
+  --blood-400: #ef4444;
+  --blood-600: #a4161a;
   --blood-700: #83101a;
   --blood-900: #430a10;
 
-  --plasma-100: #fbf0d9;
+  --plasma-100: #fef3e2;
   --plasma-500: #d69a2d;
   --plasma-700: #8a5e12;
 
-  --cryo-100: #e4f0fa;
+  --cryo-100: #eaf3fb;
   --cryo-500: #2b7fd4;
   --cryo-700: #14527f;
 
-  --verified-500: #1e7a4b;
-  --alert-500: #ff4526;
-  --alert-500-a12: rgb(255 69 38 / 12%); /* the one sanctioned translucent-red fill, §4.5 */
+  --verified-500: #15803d;
+  --alert-500: #dc2626;
+  --alert-500-a12: rgb(220 38 38 / 12%);
   --warn-500: #d97706;
 
+  /* True neutrals — white and grey, not a tinted "warm" scale. Page field
+     a hair off pure white so card surfaces still read as distinct. */
   --paper: #ffffff;
-  --surface: #fbf7f7;
-  --surface-2: #f4eded;
-  --line: #e8dcdc;
-  --line-strong: #d3c1c1;
-  --ink: #17100f;
-  --ink-muted: #6b5a58;
-  --ink-faint: #9c8a88;
+  --surface: #fafafa;
+  --surface-2: #f5f5f5;
+  --line: #e5e5e5;
+  --line-strong: #d4d4d4;
+  --ink: #171717;
+  --ink-muted: #6b7280;
+  --ink-faint: #9ca3af;
 
   /* ─── Semantic tokens, sourced from the palette above ────────────────
      Existing primitives (Button, Card, Input, Table, Badge, Dialog,
@@ -141,8 +146,8 @@
   --secondary-foreground: var(--ink);
   --muted: var(--surface-2);
   --muted-foreground: var(--ink-muted);
-  --accent: var(--blood-50);
-  --accent-foreground: var(--blood-700);
+  --accent: var(--surface-2);
+  --accent-foreground: var(--ink);
   --destructive: var(--alert-500);
   --border: var(--line);
   --input: var(--line);
@@ -152,21 +157,19 @@
   --chart-3: var(--cryo-500);
   --chart-4: var(--verified-500);
   --chart-5: var(--warn-500);
-  --radius: 4px;
-  --sidebar: var(--surface);
+  --radius: 6px;
+  --sidebar: var(--paper);
   --sidebar-foreground: var(--ink);
   --sidebar-primary: var(--blood-600);
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: var(--blood-50);
-  --sidebar-accent-foreground: var(--blood-700);
+  --sidebar-accent: var(--surface-2);
+  --sidebar-accent-foreground: var(--ink);
   --sidebar-border: var(--line);
   --sidebar-ring: var(--blood-600);
 
   /* CLAUDE.md-era aliases, kept live so pages built before this pass
-     re-skin automatically. DESIGN NOTE: revisit --credit once the ledger
-     screen (§4.6) is actually redesigned in Pass 4 — plasma-700 is a
-     placeholder distinguishing hue, not a considered choice yet. */
-  --navy: var(--blood-900);
+     re-skin automatically. */
+  --navy: var(--ink);
   --credit: var(--plasma-700);
   --status-healthy: var(--verified-500);
   --status-risk: var(--warn-500);
@@ -175,24 +178,24 @@
 
 /* Manual override (a future Settings toggle can flip this by adding/
    removing .dark on <html>, via next-themes) always wins over system
-   preference, per next-themes' attribute="class" convention. */
+   preference, per next-themes' attribute="class" convention. True neutral
+   dark grey — not a red-tinted dark field. */
 .dark,
 :root[data-theme="dark"] {
-  --paper: #1c1214;
-  --surface: #430a10;
-  --surface-2: #2a1a1d;
-  --line: #3a2427;
-  --line-strong: #4d2e32;
-  --ink: #f7efef;
-  --ink-muted: #c9a9a8;
-  --ink-faint: #8f7373;
+  --paper: #171717;
+  --surface: #0a0a0a;
+  --surface-2: #262626;
+  --line: #2e2e2e;
+  --line-strong: #404040;
+  --ink: #f5f5f5;
+  --ink-muted: #a3a3a3;
+  --ink-faint: #737373;
 
-  /* --blood-600 is too dark to read as an accent on a dark field — the
-     brief's own instruction: keep --blood-400 as the accent instead. */
+  /* --blood-600 is too dark to read as an accent on a dark field. */
   --primary: var(--blood-400);
   --ring: var(--blood-400);
-  --accent: color-mix(in oklch, var(--blood-400) 16%, var(--surface));
-  --accent-foreground: var(--blood-200);
+  --accent: var(--surface-2);
+  --accent-foreground: var(--ink);
   --card: var(--paper);
   --card-foreground: var(--ink);
   --popover: var(--paper);
@@ -206,11 +209,11 @@
   --border: var(--line);
   --input: var(--line);
   --chart-1: var(--blood-400);
-  --sidebar: var(--surface);
+  --sidebar: var(--paper);
   --sidebar-foreground: var(--ink);
   --sidebar-primary: var(--blood-400);
-  --sidebar-accent: color-mix(in oklch, var(--blood-400) 16%, var(--surface));
-  --sidebar-accent-foreground: var(--blood-200);
+  --sidebar-accent: var(--surface-2);
+  --sidebar-accent-foreground: var(--ink);
   --sidebar-border: var(--line);
   --sidebar-ring: var(--blood-400);
 }
